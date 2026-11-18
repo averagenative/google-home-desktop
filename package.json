@@ -1,0 +1,38 @@
+{
+  "name": "google-home-desktop",
+  "version": "0.1.1",
+  "description": "Unofficial desktop wrapper for the Google Home web app",
+  "main": "src/main.js",
+  "desktopName": "io.github.averagenative.googlehome.desktop",
+  "license": "MIT",
+  "author": "averagenative",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --linux AppImage"
+  },
+  "devDependencies": {
+    "electron": "^36.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "io.github.averagenative.googlehome",
+    "productName": "Google Home",
+    "files": [
+      "src/**/*",
+      "build/icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "import-session.py",
+        "to": "import-session.py"
+      }
+    ],
+    "linux": {
+      "target": "AppImage",
+      "syncDesktopName": true,
+      "icon": "build/icon.png",
+      "category": "Utility",
+      "executableName": "google-home"
+    }
+  }
+}
