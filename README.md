@@ -12,11 +12,27 @@ Versions up to 0.1.1 were an Electron app. Since 0.2.0 the app is plain C: libgs
 
 ## Install a release
 
-Each release has a binary built on Fedora 44 for x86_64. It uses the system WebKitGTK 6.0; if that's missing, install it with `sudo dnf install webkitgtk6.0`.
+The release builds are for x86_64 and are built on Ubuntu 22.04, so they also run on newer systems. They need glibc 2.34 or later, GTK 4.6 or later, and WebKitGTK 6.0. They're tested on Ubuntu 22.04, Ubuntu 24.04, and Fedora 44.
 
-1. Download `google-home-<version>-x86_64-linux.tar.gz` and `SHA256SUMS` from the [Releases page](https://github.com/averagenative/google-home-desktop/releases).
-2. In the download folder, check the file: `sha256sum -c --ignore-missing SHA256SUMS`
-3. Install it to `/usr/local`: `sudo tar -xzf google-home-<version>-x86_64-linux.tar.gz -C /`
+Download the files from the [Releases page](https://github.com/averagenative/google-home-desktop/releases), with `SHA256SUMS`. To check a download, run `sha256sum -c --ignore-missing SHA256SUMS` in the download folder.
+
+### Ubuntu and Debian
+
+Install the `.deb` with apt, which also installs WebKitGTK and the other dependencies:
+
+```bash
+sudo apt install ./google-home_<version>_amd64.deb
+```
+
+On Ubuntu 23.10 and later, the package adds an AppArmor profile, `/etc/apparmor.d/google-home`, so WebKit's sandbox can create the user namespaces it needs. To uninstall, run `sudo apt remove google-home`.
+
+### Other distributions
+
+Install WebKitGTK 6.0 with your package manager (on Fedora, `sudo dnf install webkitgtk6.0`), then unpack the binary tarball into `/usr/local`:
+
+```bash
+sudo tar -xzf google-home-<version>-x86_64-linux.tar.gz -C /
+```
 
 To uninstall, delete the files the archive lists:
 
@@ -137,6 +153,7 @@ Any program running as your user can use the socket, and the page it drives is s
 
 - `src/main.c` is the window and link policy, `src/firefox-import.c` the session import, `src/window-state.c` and `src/log.c` the rest.
 - gsurf is pinned as a submodule in `vendor/gsurf`. To update it, check out a newer tag there, then run `make deps` and `make`.
+- To build the release files, commit, then run `make dist` for the source tarball and `make portable` for the binary tarball and the `.deb`. `make portable` needs podman. It builds on Ubuntu 22.04 in a container, the oldest base the app supports (GTK 4.6, GLib 2.72, glibc 2.35), so the binaries also run on newer systems. The container applies `packaging/ubuntu-22.04/gsurf-gtk4.6-glib2.72.patch` to its own copy of gsurf; `vendor/gsurf` itself stays unpatched.
 - The icon source is `data/google-home-desktop.svg`; regenerate the PNG with `rsvg-convert -w 512 -h 512 data/google-home-desktop.svg -o data/google-home-desktop.png`.
 
 ## License

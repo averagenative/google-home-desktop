@@ -1,0 +1,40 @@
+Build gsurf 0.5.14 with GTK 4.6 and GLib 2.72 (Ubuntu 22.04).
+
+Applied by `make portable` to the build copy only; vendor/gsurf stays
+as released. Both changes are version-guarded, so newer GTK and GLib
+build exactly the original code.
+
+diff -ru a/src/backend/gtk4/gsurf-gtk4-window.c b/src/backend/gtk4/gsurf-gtk4-window.c
+--- a/src/backend/gtk4/gsurf-gtk4-window.c	2026-11-18 13:10:52.733656379 -0500
++++ b/src/backend/gtk4/gsurf-gtk4-window.c	2026-11-18 13:10:52.766381224 -0500
+@@ -182,10 +182,13 @@
+ 	GtkWidget *widget = gtk_event_controller_get_widget(ctrl);
+ 	guint mods = translate_modifiers(gtk_event_controller_get_current_event_state(ctrl));
+ 
++#if GTK_CHECK_VERSION(4, 8, 0)
++	/* GTK before 4.8 does not report the unit; deltas pass through. */
+ 	if (gtk_event_controller_scroll_get_unit(scroll) == GDK_SCROLL_UNIT_SURFACE) {
+ 		dx /= GSURF_GTK4_SCROLL_PX_PER_NOTCH;
+ 		dy /= GSURF_GTK4_SCROLL_PX_PER_NOTCH;
+ 	}
++#endif
+ 	return gsurf_window_emit_wheel(GSURF_WINDOW(self), view_for_widget(self, widget),
+ 		dx, dy, mods);
+ }
+diff -ru a/src/core/gsurf-container-registry.c b/src/core/gsurf-container-registry.c
+--- a/src/core/gsurf-container-registry.c	2026-11-18 13:10:52.735541598 -0500
++++ b/src/core/gsurf-container-registry.c	2026-11-18 13:10:52.766669206 -0500
+@@ -447,6 +447,13 @@
+ 	self->cookie_policy = -1;
+ }
+ 
++/* The _pointer variants are GLib 2.80; the generic macros before them
++ * handle pointer-sized locations the same way. */
++#if !GLIB_CHECK_VERSION(2, 80, 0)
++#define g_once_init_enter_pointer(location) g_once_init_enter(location)
++#define g_once_init_leave_pointer(location, result) g_once_init_leave((location), (result))
++#endif
++
+ GsurfContainerRegistry *
+ gsurf_container_registry_get_default(void)
+ {

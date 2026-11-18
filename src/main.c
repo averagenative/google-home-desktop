@@ -115,13 +115,89 @@ close_window_later(GsurfWindow *window)
 		g_object_ref(window), g_object_unref);
 }
 
+/* --- dialogs --- */
+
+/*
+ * Called with the index of the chosen button, or the cancel button's
+ * when the dialog is dismissed.
+ */
+typedef void (*AnswerFunc)(int button);
+
+typedef struct {
+	AnswerFunc done;
+	int        cancel;
+} Question;
+
+static void
+answer(Question *q, int button)
+{
+	if (q->done != NULL)
+		q->done(button >= 0 ? button : q->cancel);
+	g_free(q);
+}
+
+/*
+ * GtkAlertDialog needs GTK 4.10. Ubuntu 22.04 has GTK 4.6, so older GTK
+ * gets the GtkMessageDialog it replaced.
+ */
+#if GTK_CHECK_VERSION(4, 10, 0)
+static void
+alert_answered(GObject *source, GAsyncResult *result, gpointer user_data)
+{
+	g_autoptr(GError) error = NULL;
+
+	answer(user_data, gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(source), result, &error));
+}
+#else
+static void
+message_answered(GtkDialog *dialog, int response, gpointer user_data)
+{
+	answer(user_data, response);
+	gtk_window_destroy(GTK_WINDOW(dialog));
+}
+#endif
+
+/* A modal dialog over the main window. @buttons is NULL-terminated. */
+static void
+ask(const gchar *message, const gchar *detail, const char *const *buttons,
+    int cancel, int default_button, AnswerFunc done)
+{
+	Question *q = g_new0(Question, 1);
+
+	q->done = done;
+	q->cancel = cancel;
+#if GTK_CHECK_VERSION(4, 10, 0)
+	{
+		g_autoptr(GtkAlertDialog) dialog = gtk_alert_dialog_new("%s", message);
+
+		gtk_alert_dialog_set_detail(dialog, detail);
+		gtk_alert_dialog_set_buttons(dialog, buttons);
+		gtk_alert_dialog_set_cancel_button(dialog, cancel);
+		gtk_alert_dialog_set_default_button(dialog, default_button);
+		gtk_alert_dialog_choose(dialog, gtk_window_of(G.window), NULL, alert_answered, q);
+	}
+#else
+	{
+		GtkWidget *dialog = gtk_message_dialog_new(gtk_window_of(G.window),
+			GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+			GTK_MESSAGE_OTHER, GTK_BUTTONS_NONE, "%s", message);
+
+		gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog), "%s", detail);
+		for (int i = 0; buttons[i] != NULL; i++)
+			gtk_dialog_add_button(GTK_DIALOG(dialog), buttons[i], i);
+		gtk_dialog_set_default_response(GTK_DIALOG(dialog), default_button);
+		g_signal_connect(dialog, "response", G_CALLBACK(message_answered), q);
+		gtk_window_present(GTK_WINDOW(dialog));
+	}
+#endif
+}
+
 static void
 show_error(const gchar *message, const gchar *detail)
 {
-	g_autoptr(GtkAlertDialog) dialog = gtk_alert_dialog_new("%s", message);
+	static const char *const buttons[] = { "Close", NULL };
 
-	gtk_alert_dialog_set_detail(dialog, detail);
-	gtk_alert_dialog_show(dialog, gtk_window_of(G.window));
+	ask(message, detail, buttons, 0, 0, NULL);
 }
 
 /* --- where links go --- */
@@ -179,6 +255,8 @@ destination_for(const gchar *uri)
 	return DEST_BLOCKED;
 }
 
+/* GtkUriLauncher needs GTK 4.10; older GTK has gtk_show_uri_full(). */
+#if GTK_CHECK_VERSION(4, 10, 0)
 static void
 launched(GObject *source, GAsyncResult *result, gpointer user_data)
 {
@@ -197,6 +275,25 @@ open_external(GsurfWindow *window, const gchar *uri)
 	ghd_log("opening outside the app: %s", shown);
 	gtk_uri_launcher_launch(launcher, gtk_window_of(window), NULL, launched, NULL);
 }
+#else
+static void
+launched(GObject *source, GAsyncResult *result, gpointer user_data)
+{
+	g_autoptr(GError) error = NULL;
+
+	if (!gtk_show_uri_full_finish(GTK_WINDOW(source), result, &error))
+		ghd_log("cannot open link: %s", error->message);
+}
+
+static void
+open_external(GsurfWindow *window, const gchar *uri)
+{
+	g_autofree gchar *shown = uri_for_log(uri);
+
+	ghd_log("opening outside the app: %s", shown);
+	gtk_show_uri_full(gtk_window_of(window), uri, GDK_CURRENT_TIME, NULL, launched, NULL);
+}
+#endif
 
 /*
  * WebKit asks before every navigation, response and new window. gsurf
@@ -356,11 +453,8 @@ is_signed_out_page(const gchar *uri)
 }
 
 static void
-signed_out_answered(GObject *source, GAsyncResult *result, gpointer user_data)
+signed_out_answered(int button)
 {
-	g_autoptr(GError) error = NULL;
-	int button = gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(source), result, &error);
-
 	if (button == 1)
 		start_import(IMPORT_PROMPTED);
 }
@@ -370,21 +464,16 @@ static void
 prompt_signed_out(void)
 {
 	static const char *const buttons[] = { "Sign In Here", "Import from Firefox", NULL };
-	g_autoptr(GtkAlertDialog) dialog = NULL;
 
 	if (G.offered_import)
 		return;
 	G.offered_import = TRUE;
 	ghd_log("signed out: offering a Firefox import");
 
-	dialog = gtk_alert_dialog_new("You are not signed in to Google");
-	gtk_alert_dialog_set_detail(dialog,
+	ask("You are not signed in to Google",
 		"Sign in on this page. If Google refuses to sign you in here, sign in to "
-		"home.google.com in Firefox, then import that session.");
-	gtk_alert_dialog_set_buttons(dialog, buttons);
-	gtk_alert_dialog_set_cancel_button(dialog, 0);
-	gtk_alert_dialog_set_default_button(dialog, 1);
-	gtk_alert_dialog_choose(dialog, gtk_window_of(G.window), NULL, signed_out_answered, NULL);
+		"home.google.com in Firefox, then import that session.",
+		buttons, 0, 1, signed_out_answered);
 }
 
 static void

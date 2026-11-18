@@ -1,0 +1,38 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# WebKitGTK sandboxes its web processes with bubblewrap, which needs
+# unprivileged user namespaces. Ubuntu 23.10 and later restrict those
+# to programs with an AppArmor profile that allows them, the way Ubuntu
+# ships profiles for its own browsers. Add one where the restriction is
+# on; elsewhere (Ubuntu 22.04, Debian) do nothing.
+set -e
+
+PROFILE=/etc/apparmor.d/google-home
+RESTRICT=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+
+if [ "$1" = configure ] && [ -r "$RESTRICT" ] && [ "$(cat "$RESTRICT")" = 1 ] &&
+   command -v apparmor_parser >/dev/null 2>&1; then
+	cat > "$PROFILE" <<'EOF'
+# Installed by the google-home package: lets WebKitGTK's bubblewrap
+# sandbox create user namespaces. Removed with the package.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile google-home /usr/bin/google-home flags=(unconfined) {
+  userns,
+
+  include if exists <local/google-home>
+}
+EOF
+	apparmor_parser -r -W "$PROFILE" ||
+		echo "google-home: could not load $PROFILE; the app may show a blank window" >&2
+fi
+
+if command -v update-desktop-database >/dev/null 2>&1; then
+	update-desktop-database -q /usr/share/applications || true
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+	gtk-update-icon-cache -qt /usr/share/icons/hicolor || true
+fi
+exit 0

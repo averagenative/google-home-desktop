@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Build environment for the portable release binary and the .deb.
+# Ubuntu 22.04 has the oldest GTK (4.6) and glibc (2.35) this app
+# supports, so a binary built here also runs on newer distributions.
+# Used by `make portable` (see the Makefile).
+FROM docker.io/library/ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential pkg-config ca-certificates dpkg-dev \
+        libgtk-4-dev libwebkitgtk-6.0-dev libsoup-3.0-dev libjson-glib-dev \
+        libyaml-dev libsqlite3-dev libreadline-dev \
+    && rm -rf /var/lib/apt/lists/*

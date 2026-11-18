@@ -12,8 +12,11 @@
 #   make deps            fetch the gsurf submodule and its dependencies
 #   make dist            source tarball of HEAD, gsurf included
 #   make bindist         binary tarball that installs to /usr/local
+#   make deb             Debian/Ubuntu package (needs dpkg-dev)
+#   make portable        bindist and deb built on Ubuntu 22.04 (needs podman)
 
-VERSION := 0.2.0
+VERSION := 0.2.1
+MAINTAINER := averagenative <102378912+averagenative@users.noreply.github.com>
 
 PREFIX  ?= $(HOME)/.local
 BINDIR  ?= $(PREFIX)/bin
@@ -42,7 +45,7 @@ BUILD_PKGS := $(PKGS) readline
 FEDORA_PACKAGES := gcc make git pkgconf-pkg-config gtk4-devel webkitgtk6.0-devel \
                    libsoup3-devel json-glib-devel libyaml-devel sqlite-devel readline-devel
 
-NO_DEPS_GOALS := clean distclean deps dist help uninstall
+NO_DEPS_GOALS := clean distclean deps dist portable help uninstall
 ifneq ($(filter-out $(NO_DEPS_GOALS),$(or $(MAKECMDGOALS),all)),)
 MISSING := $(shell for p in $(BUILD_PKGS); do $(PKG_CONFIG) --exists $$p || echo $$p; done)
 ifneq ($(strip $(MISSING)),)
@@ -62,7 +65,7 @@ HDRS := $(wildcard src/*.h)
 OBJS := $(SRCS:src/%.c=build/obj/%.o)
 BIN  := build/google-home
 
-.PHONY: all run install uninstall gsurfctl deps dist bindist clean distclean help FORCE
+.PHONY: all run install uninstall gsurfctl deps dist bindist deb portable clean distclean help FORCE
 
 all: $(BIN)
 
@@ -72,7 +75,8 @@ $(BIN): $(OBJS) $(GSURF_LIB)
 # The gsurf build is incremental, so ask it every time; the binary
 # relinks only when the archive changes. Objects wait for it because
 # gsurf generates one of the headers they include.
-build/obj/%.o: src/%.c $(HDRS) | $(GSURF_LIB) build/obj
+# Makefile too: VERSION and the flags live there.
+build/obj/%.o: src/%.c $(HDRS) Makefile | $(GSURF_LIB) build/obj
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
 
 $(GSURF_LIB): FORCE | $(GSURF_DIR)/deps/crispy/Makefile
@@ -145,6 +149,52 @@ bindist: $(BIN)
 	cd build/bindist && find usr -type f | sort | \
 		tar --owner=0 --group=0 --numeric-owner -czf ../$(BINDIST).tar.gz -T -
 	@echo "build/$(BINDIST).tar.gz"
+
+# A .deb installing to /usr. dpkg-shlibdeps derives the library
+# dependencies; WebKitGTK's package brings TLS, bubblewrap and GStreamer.
+# ca-certificates is listed too: a minimal system may lack the CA list,
+# and without it every HTTPS page fails.
+DEB := google-home_$(VERSION)_amd64.deb
+
+deb: $(BIN)
+	rm -rf build/deb build/debctl
+	$(MAKE) install DESTDIR=$(CURDIR)/build/deb PREFIX=/usr
+	strip build/deb/usr/bin/google-home
+	$(INSTALL) -Dm644 LICENSE build/deb/usr/share/doc/google-home/copyright
+	mkdir -p build/deb/DEBIAN build/debctl/debian
+	printf 'Source: google-home\n\nPackage: google-home\nArchitecture: amd64\n' \
+		> build/debctl/debian/control
+	cd build/debctl && dpkg-shlibdeps -O -e../deb/usr/bin/google-home \
+		| sed -n 's/^shlibs:Depends=//p' > ../deb-depends
+	{ \
+		echo "Package: google-home"; \
+		echo "Version: $(VERSION)"; \
+		echo "Architecture: amd64"; \
+		echo "Maintainer: $(MAINTAINER)"; \
+		echo "Installed-Size: $$(du -sk build/deb/usr | cut -f1)"; \
+		echo "Depends: $$(cat build/deb-depends), ca-certificates"; \
+		echo "Section: web"; \
+		echo "Priority: optional"; \
+		echo "Homepage: https://github.com/averagenative/google-home-desktop"; \
+		echo "Description: unofficial desktop app for the Google Home web app"; \
+		echo " Opens home.google.com in its own window with a persistent login,"; \
+		echo " built on gsurf and WebKitGTK. Other sites open in your browser."; \
+	} > build/deb/DEBIAN/control
+	$(INSTALL) -m755 packaging/debian/postinst packaging/debian/postrm build/deb/DEBIAN/
+	# xz, not Ubuntu's default zstd, which older Debian dpkg cannot read.
+	dpkg-deb -Zxz --root-owner-group --build build/deb build/$(DEB)
+	@echo "build/$(DEB)"
+
+# The release binaries: built on Ubuntu 22.04, the oldest base this app
+# supports (GTK 4.6, glibc 2.35), so they also run on newer systems.
+PORTABLE_IMAGE := google-home-build-ubuntu2204
+
+portable:
+	mkdir -p build
+	podman build -q -t $(PORTABLE_IMAGE) packaging/ubuntu-22.04
+	podman run --rm --security-opt label=disable \
+		-v $(CURDIR):/repo:ro -v $(CURDIR)/build:/out \
+		$(PORTABLE_IMAGE) sh /repo/packaging/ubuntu-22.04/build.sh
 
 clean:
 	rm -rf build

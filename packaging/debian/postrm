@@ -1,0 +1,20 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Remove the AppArmor profile that postinst may have added.
+set -e
+
+PROFILE=/etc/apparmor.d/google-home
+
+if [ "$1" = remove ] || [ "$1" = purge ]; then
+	if [ -e "$PROFILE" ]; then
+		if command -v apparmor_parser >/dev/null 2>&1; then
+			apparmor_parser -R "$PROFILE" 2>/dev/null || true
+		fi
+		rm -f "$PROFILE"
+	fi
+	if command -v update-desktop-database >/dev/null 2>&1; then
+		update-desktop-database -q /usr/share/applications || true
+	fi
+fi
+exit 0
