@@ -1,0 +1,3 @@
+[submodule "vendor/gsurf"]
+	path = vendor/gsurf
+	url = https://git.podbielniak.com/zachpodbielniak/gsurf.git

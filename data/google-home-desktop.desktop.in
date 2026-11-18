@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Google Home
+Comment=Unofficial desktop app for the Google Home web app
+Exec=@BINDIR@/google-home
+Icon=google-home-desktop
+Terminal=false
+Categories=Utility;
+Keywords=google;home;smart;devices;nest;
+StartupNotify=true
+StartupWMClass=google-home-desktop

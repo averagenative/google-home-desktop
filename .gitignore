@@ -1,2 +1,4 @@
+build/
+# Left over from the Electron build
 node_modules/
 dist/
